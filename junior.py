@@ -52,7 +52,14 @@ class Team:
         return (jet for jet in all_jets if jet.uid in self.jet_ids)
 
     def remove_dead_entities(self):
-        pass
+        all_tanks = (tank.uid for tank in (self.me["tanks"] if "tanks" in self.me else []))
+        self.tank_ids = [tank_id for tank_id in self.tank_ids if tank_id in all_tanks]
+
+        all_ships = (ship.uid for ship in (self.me["ships"] if "ships" in self.me else []))
+        self.ship_ids = [ship_id for ship_id in self.ship_ids if ship_id in all_ships]
+
+        all_jets = (jet.uid for jet in (self.me["jets"] if "jets" in self.me else []))
+        self.jet_ids = [jet_id for jet_id in self.jet_ids if jet_id in all_jets]
 
     @property
     def enemy_teams(self) -> Iterable[dict]:
