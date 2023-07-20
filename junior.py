@@ -104,19 +104,36 @@ class PlayerAi:
             # If everything else is satisfied, build a jet
             elif base.crystal > base.cost("jet"):
                 # build_jet() returns the uid of the jet that was built
-                jet_uid = base.build_jet(heading=360 * np.random.random())
+                if np.random.randint(0, 1) == 0:
+                    jet_uid = base.build_jet(heading=360 * np.random.random())
+                else:
+                    base.build_ship(heading=360 * np.random.random())
+                    base.build_ship(heading=360 * np.random.random())
+
 
         # Try to find an enemy target
-        target = None
+        targets = []
         # If there are multiple teams in the info, find the first team that is not mine
         if len(info) > 1:
             for name in info:
                 if name != self.team:
                     # Target only bases
+                    if "planes" in info[name]:
+                        # Simply target the first base
+                        t = info[name]["planes"][0]
+                        targets.append([t.x, t.y])
                     if "bases" in info[name]:
                         # Simply target the first base
                         t = info[name]["bases"][0]
-                        target = [t.x, t.y]
+                        targets.append([t.x, t.y])
+                    elif "ships" in info[name]:
+                        # Simply target the first base
+                        t = info[name]["ships"][0]
+                        targets.append([t.x, t.y])
+                    elif "tanks" in info[name]:
+                        # Simply target the first base
+                        t = info[name]["tanks"][0]
+                        targets.append([t.x, t.y])
 
         # Controlling my vehicles ==============================================
 
@@ -172,7 +189,8 @@ class PlayerAi:
                     if all(tank.position == self.previous_positions[tank.uid]):
                         tank.set_heading(np.random.random() * 360.0)
                     # Else, if there is a target, go to the target
-                    elif target is not None:
+                    if targets:
+                        target = targets.pop()
                         tank.goto(*target)
                 # Store the previous position of this tank for the next time step
                 self.previous_positions[tank.uid] = tank.position
@@ -196,5 +214,6 @@ class PlayerAi:
         if "jets" in myinfo:
             for jet in myinfo["jets"]:
                 # Jets simply go to the target if there is one, they never get stuck
-                if target is not None:
+                if targets:
+                    target = targets.pop()
                     jet.goto(*target)
