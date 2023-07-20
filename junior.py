@@ -5,11 +5,13 @@ from typing import Any, Iterable
 import numpy as np
 from dataclasses import dataclass, field
 from supremacy.base import Base
-from supremacy.vehicles import Jet, Ship, Tank
+from supremacy.vehicles import Jet, Tank, Ship
 
 # This is your team name
 # CREATOR = "5monkeys"
 CREATOR = "junior"
+
+class DeadError(RuntimeError): ...
 
 @dataclass
 class Team:
@@ -21,12 +23,14 @@ class Team:
     jet_ids: list[str] = field(default_factory=list)
     money: int = 0
 
+    last_positions: dict[str, np.ndarray] = field(default_factory=dict)
+
     @property
     def base(self) -> Base:
         for base in self.me["bases"]:
             if base.uid == self.base_id:
                 return base
-        raise AssertionError("we seem to be dead :(")
+        raise DeadError("we seem to be dead :(")
 
     @property
     def me(self) -> dict:
@@ -98,34 +102,22 @@ class Team:
                 targets.append([t.x, t.y])
 
         for tank in self.tanks:
-            """
-            if (tank.uid in self.previous_positions) and (not tank.stopped):
-                # If the tank position is the same as the previous position,
-                # set a random heading
-                if all(tank.position == self.previous_positions[tank.uid]):
+            if (tank.uid in self.last_positions) and (not tank.stopped):
+                if all(tank.position == self.last_positions[tank.uid]):
                     tank.set_heading(np.random.random() * 360.0)
-                # Else, if there is a target, go to the target
                 if targets:
                     target = targets.pop()
                     tank.goto(*target)
-            # Store the previous position of this tank for the next time step
-            self.previous_positions[tank.uid] = tank.position
-            """
+            self.last_positions[tank.uid] = tank.position
 
         for ship in self.ships:
-            """
-            if ship.uid in self.previous_positions:
-                # If the ship position is the same as the previous position,
-                # convert the ship to a base if it is far from the owning base,
-                # set a random heading otherwise
-                if all(ship.position == self.previous_positions[ship.uid]):
+            if ship.uid in self.last_positions:
+                if all(ship.position == self.last_positions[ship.uid]):
                     if ship.get_distance(ship.owner.x, ship.owner.y) > 20:
                         ship.convert_to_base()
                     else:
                         ship.set_heading(np.random.random() * 360.0)
-            # Store the previous position of this ship for the next time step
-            self.previous_positions[ship.uid] = ship.position
-            """
+            self.last_positions[ship.uid] = ship.position
 
         for jet in self.jets:
             if targets:
@@ -159,7 +151,10 @@ class PlayerAi:
             ))
         for team in self.teams:
             team.info = info
-            team.run()
+            try:
+                team.run()
+            except DeadError:
+                pass
 
         """
         This is the main function that will be called by the game engine.
