@@ -15,6 +15,7 @@ class DeadError(RuntimeError): ...
 
 @dataclass
 class Team:
+    teams: list["Team"]
     base_id: str
     info: dict
     mines: int = 1
@@ -113,8 +114,14 @@ class Team:
         for ship in self.ships:
             if ship.uid in self.last_positions:
                 if all(ship.position == self.last_positions[ship.uid]):
-                    if ship.get_distance(ship.owner.x, ship.owner.y) > 20:
-                        ship.convert_to_base()
+                    if ship.get_distance(ship.owner.x, ship.owner.y) > 80:
+                        if (base := ship.convert_to_base()):
+                            self.ship_ids.remove(ship.uid)
+                            self.teams.append(Team(
+                                teams=self.teams,
+                                base_id=base,
+                                info=self.info
+                            ))
                     else:
                         ship.set_heading(np.random.random() * 360.0)
             self.last_positions[ship.uid] = ship.position
@@ -146,8 +153,9 @@ class PlayerAi:
         self.tick += 1
         if self.tick == 1:
             self.teams.append(Team(
-                info[self.team]["bases"][0].uid,
-                info
+                teams=self.teams,
+                base_id=info[self.team]["bases"][0].uid,
+                info=info
             ))
         for team in self.teams:
             team.info = info
@@ -155,65 +163,3 @@ class PlayerAi:
                 team.run()
             except DeadError:
                 pass
-
-        """
-        This is the main function that will be called by the game engine.
-
-        Parameters
-        ----------
-        t : float
-            The current time in seconds.
-        dt : float
-            The time step in seconds.
-        info : dict
-            A dictionary containing all the information about the game.
-            The structure is as follows:
-            {
-                "team_name_1": {
-                    "bases": [base_1, base_2, ...],
-                    "tanks": [tank_1, tank_2, ...],
-                    "ships": [ship_1, ship_2, ...],
-                    "jets": [jet_1, jet_2, ...],
-                },
-                "team_name_2": {
-                    ...
-                },
-                ...
-            }
-        game_map : np.ndarray
-            A 2D numpy array containing the game map.
-            1 means land, 0 means water, -1 means no info.
-        """
-
-        # Get information about my team
-        myinfo = info[self.team]
-
-        # Controlling my bases =================================================
-
-        # Description of information available on bases:
-        #
-        # This is read-only information that all the bases (enemy and your own) have.
-        # We define base = info[team_name_1]["bases"][0]. Then:
-        #
-        # base.x (float): the x position of the base
-        # base.y (float): the y position of the base
-        # base.position (np.ndarray): the (x, y) position as a numpy array
-        # base.team (str): the name of the team the base belongs to, e.g. ‘John’
-        # base.number (int): the player number
-        # base.mines (int): the number of mines inside the base
-        # base.crystal (int): the amount of crystal the base has in stock
-        #     (crystal is per base, not shared globally)
-        # base.uid (str): unique id for the base
-        #
-        # Description of base methods:
-        #
-        # If the base is your own, the object will also have the following methods:
-        #
-        # base.cost("mine"): get the cost of an object.
-        #     Possible types are: "mine", "tank", "ship", "jet"
-        # base.build_mine(): build a mine
-        # base.build_tank(): build a tank
-        # base.build_ship(): build a ship
-        # base.build_jet(): build a jet
-
-        # Iterate through all my bases (vehicles belong to bases)
