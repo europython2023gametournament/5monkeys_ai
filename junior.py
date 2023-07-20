@@ -101,6 +101,7 @@ class Team:
             elif "tanks" in enemy_team:
                 t = enemy_team["tanks"][0]
                 targets.append([t.x, t.y])
+        targets *= 10
 
         for tank in self.tanks:
             if (tank.uid in self.last_positions) and (not tank.stopped):
