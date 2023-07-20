@@ -1,16 +1,11 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from dataclasses import dataclass
+from enum import Enum, auto
 import numpy as np
-
 
 # This is your team name
 CREATOR = "5monkeys"
-
-
-@dataclass
-class ExpandStrategy:
-  pass
 
 
 @dataclass
@@ -24,7 +19,7 @@ class MoveStrategy:
   y: int
 
 
-GroupStrategy = ExpandStrategy | AttackStrategy | MoveStrategy
+GroupStrategy = AttackStrategy | MoveStrategy
 
 
 class GroupActor:
@@ -32,7 +27,7 @@ class GroupActor:
   ships: list[str] = []
   jets: list[str] = []
 
-  strategy: GroupStrategy = ExpandStrategy
+  strategy: GroupStrategy
 
   def merge(a: "GroupActor", b: "GroupActor") -> "GroupActor":
     return GroupActor(
@@ -42,9 +37,7 @@ class GroupActor:
     )
 
   def run(self, t: float, dt: float, info: dict, game_map: np.ndarray):
-    if isinstance(self.strategy, ExpandStrategy):
-      pass
-    elif isinstance(self.strategy, AttackStrategy):
+    if isinstance(self.strategy, AttackStrategy):
       pass
     elif isinstance(self.strategy, MoveStrategy):
       pass
@@ -52,49 +45,79 @@ class GroupActor:
 
 class SettlerActor:
   uid: str
-  home: np.ndarray
+  home: np.ndarray | None
+  ship: any
+
+  def __init__(self, uid: str, home: np.ndarray | None = None):
+    self.uid = uid
+    self.home = home
 
   def run(self, t: float, dt: float, info: dict, game_map: np.ndarray):
-    ship = info[CREATOR]["ship"][self.uid]
+    if self.home is None:
+      self.home = self.ship.position
 
+# def heading_away_from_land(surrounding: np.ndarray):
+#   vecs = []
+#   for y in range(0, 3):
+#     for x in range(0, 3):
+#       if surrounding[y][x] == -1:
+#         vecs.append((y / 2, x / 2))
+#       elif surrounding[y][x] == 0:
+#         vecs.append((y, x))
+#   pass
 
-@dataclass
-class ExpandStrategy:
-  pass
+def find_heading_away_from_land(surrounding: np.ndarray):
+    # Middle index
+    middle_index = (1, 1)
+    
+    # Get the indices of nonzero elements
+    nonzero_indices = np.argwhere(surrounding != 0)
+    
+    if len(nonzero_indices) == 0:
+        return None
+    
+    # Calculate the mean of nonzero indices to get the direction
+    mean_indices = nonzero_indices.mean(axis=0)
+    
+    # Calculate the direction vector
+    direction_vector = mean_indices - middle_index
+    
+    return np.degrees(np.arctan2(*direction_vector.T[::-1])) % 360.0
 
-
-@dataclass
-class ReplicateStrategy:
-  pass
-
-
-@dataclass
-class BuildingStrategy:
-  pass
-
-
-BaseStrategy = ExpandStrategy | ReplicateStrategy | BuildingStrategy
-
+class BaseStrategy(Enum):
+  EXPAND = auto()
+  REPLICATE = auto()
+  TRAIN = auto()
 
 class BaseActor:
   uid: str
-  strategy: BaseStrategy = ExpandStrategy
+  strategy: BaseStrategy
+  base: any
+
+  def __init__(self, uid: str, strategy: BaseStrategy = BaseStrategy.EXPAND):
+    self.uid = uid
+    self.strategy = strategy
 
   def run(self, t: float, dt: float, info: dict, game_map: np.ndarray):
-    base = info[CREATOR]["bases"][self.uid]
+    if self.strategy == BaseStrategy.EXPAND:
+      if self.base.mines < 3:
+        if self.base.crystal > self.base.cost("mine"):
+          self.base.build_mine()
 
-    if isinstance(self.strategy, ExpandStrategy):
-      if base.mines < 3:
-        if base.crystal > base.cost("mine"):
-          base.build_mine()
+      if self.base.mines == 3:
+        if self.base.crystal > self.base.cost("tank"):
+          self.base.build_tank(0)
+          self.strategy = BaseStrategy.REPLICATE
 
-      if base.mines == 3:
-        self.strategy = ReplicateStrategy
 
-    if isinstance(self.strategy, ReplicateStrategy):
-      return
+    if self.strategy == BaseStrategy.REPLICATE:
+      if self.base.crystal > self.base.cost("ship"):
+        surrounding = game_map[self.base.y - 2:self.base.y + 1, self.base.x - 2:self.base.x + 1]
+        print("!!!!!!!!!", find_heading_away_from_land(surrounding))
+        self.base.build_ship(0)
+        breakpoint()
 
-    if isinstance(self.strategy, BuildingStrategy):
+    if self.strategy == BaseStrategy.TRAIN:
       return
 
 
@@ -187,15 +210,31 @@ class PlayerAi:
     if has_ships:
       for ship in myinfo["ships"]:
         if not ship.uid in self.settlers:
-          self.settlers[ship.uid] = SettlerActor(base.uid)
+          self.settlers[ship.uid] = SettlerActor(ship.uid)
+        self.settlers[ship.uid].ship = ship
 
-        self.settlers[ship.uid].run(t, dt, info, game_map)
+      self.settlers = {
+        uid: self.settlers[uid]
+        for uid in [ship.uid for ship in myinfo["ships"]]
+      }
+    else:
+      self.settlers = {}
 
     for base in myinfo["bases"]:
-      if base.uid in self.bases:
-        self.bases[base.uid].run(t, dt, info, game_map)
-      else:
+      if not base.uid in self.bases:
         self.bases[base.uid] = BaseActor(base.uid)
+      self.bases[base.uid].base = base
+
+    self.bases = {
+        uid: self.bases[uid]
+        for uid in [base.uid for base in myinfo["bases"]]
+    }
+      
+    for uid in self.settlers:
+      self.settlers[uid].run(t, dt, info, game_map)
+
+    for uid in self.bases:
+      self.bases[uid].run(t, dt, info, game_map)
 
     # Iterate through all my bases (vehicles belong to bases)
     # for base in myinfo["bases"]:
