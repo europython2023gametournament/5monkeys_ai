@@ -6,7 +6,7 @@ import math
 import numpy as np
 
 # This is your team name
-CREATOR = "5monkeys"
+CREATOR = "aa-base"
 
 
 def heading_away_from_land(game_map: np.ndarray, x: int, y: int) -> np.ndarray:
@@ -165,12 +165,12 @@ class PlayerAi:
             tank.set_heading(np.random.random() * 360.0)
           elif len(enemy_jets) > 0:
             closest_enemy_jet = min(
-                enemy_jets, key=lambda enemy_jet: tank.get_distance(enemy_jet.x, enemy_jet.y, False))
+                enemy_jets, key=lambda enemy_jet: base.get_distance(enemy_jet.x, enemy_jet.y, False))
             tank.goto(*closest_enemy_jet.position)
           elif len(enemy_tanks) > 0:
             closest_enemy_tank = min(
                 enemy_tanks,
-                key=lambda enemy_tank: tank.get_distance(enemy_tank.x, enemy_tank.y, False))
+                key=lambda enemy_tank: base.get_distance(enemy_tank.x, enemy_tank.y, False))
             tank.goto(*closest_enemy_tank.position)
 
         # Store the previous position of this tank for the next time step
