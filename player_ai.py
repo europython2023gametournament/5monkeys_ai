@@ -3,7 +3,7 @@
 import numpy as np
 
 # This is your team name
-CREATOR = "TeamName"
+CREATOR = "5monkeys"
 
 
 # This is the AI bot that will be instantiated for the competition
