@@ -6,7 +6,7 @@ import math
 import numpy as np
 
 # This is your team name
-CREATOR = "settlers"
+CREATOR = "5monkeys"
 
 
 def heading_away_from_land(game_map: np.ndarray, x: int, y: int) -> np.ndarray:
@@ -18,9 +18,9 @@ def heading_away_from_land(game_map: np.ndarray, x: int, y: int) -> np.ndarray:
     if sx == offset and sy == offset:
       continue
     if surrounding[sx, sy] != 1:
-      samples.append(math.atan2(y - sy, x - sx))
+      samples.append(np.arctan2(y - sy, x - sx))
 
-  return np.median(samples) * 180 / math.pi
+  return np.mean(samples) * 180 / np.pi
 
 
 class BaseState(Enum):
@@ -35,6 +35,7 @@ class PlayerAi:
 
     # Record the previous positions of all my vehicles
     self.previous_positions = {}
+    self.historic_positions = set()
     self.base_ntanks = defaultdict(lambda: 0)
     self.base_nships = defaultdict(lambda: 0)
     self.base_states = defaultdict(lambda: BaseState.INITIALIZE)
@@ -107,9 +108,10 @@ class PlayerAi:
     base_grouped_jets = defaultdict(list)
     if "jets" in myinfo:
       for jet in myinfo["jets"]:
-        base_grouped_jets[tank.owner.uid].append(jet)
+        base_grouped_jets[jet.owner.uid].append(jet)
 
-    base_positions = [[base.x, base.y] for base in myinfo["bases"]]
+    base_positions = [(base.x, base.y) for base in myinfo["bases"]]
+    self.historic_positions.update(base_positions)
 
     for base in myinfo["bases"]:
       base_tanks = base_grouped_tanks[base.uid]
@@ -125,16 +127,16 @@ class PlayerAi:
       if base.mines < 3:
         if base.crystal > base.cost("mine"):
           base.build_mine()
-      elif base.crystal > base.cost("tank") and (len(base_tanks) < 5) or base_ntanks < 8:
+      elif base.crystal > base.cost("tank") and (len(base_tanks) < 1) or base_ntanks < 8:
         base.build_tank(np.flip(heading_away))
         self.base_ntanks[base.uid] += 1
       # Time to divide like a bacteria! Send out the ships!
-      elif base.crystal > base.cost("ship") and (len(base_ships) < 2) or base_nships < 3:
+      elif base.crystal > base.cost("ship") and (len(base_ships) < 1) or base_nships < 3:
         # We need to check that there is not a friendly base in the direct
         # vicinity (a margin of 10 degrees in this case) of the heading we
         # initially chose. If there is we want to shift our heading, here
         # by 20 degrees.
-        for [bx, by] in base_positions:
+        for bx, by in base_positions:
           margin = 10
           heading_towards_base = math.atan2(base.y - by, base.x - bx)
 
@@ -146,6 +148,12 @@ class PlayerAi:
       # If everything else is satisfied, build a jet.
       elif base.crystal > base.cost("jet"):
         base.build_jet(np.flip(heading_away))
+
+      for jet in base_jets:
+        if len(enemy_bases) >= 1:
+          jet.goto(enemy_bases[0].x, enemy_bases[0].y)
+        # else:
+        #   jet.goto(jet.owner.x, jet.owner.y)
 
     # Controlling my bases =================================================
 
@@ -283,8 +291,8 @@ class PlayerAi:
           # set a random heading otherwise
           if all(ship.position == self.previous_positions[ship.uid]):
             min_base_ship_distance = 20
-            base_ship_distances = [([x, y], ship.get_distance(x, y))
-                                   for [x, y] in base_positions]
+            base_ship_distances = [((x, y), ship.get_distance(x, y))
+                                   for x, y in base_positions]
             closest_base = min(
                 base_ship_distances,
                 key=lambda base_ship_distance: base_ship_distance[1])
@@ -308,8 +316,8 @@ class PlayerAi:
         self.previous_positions[ship.uid] = ship.position
 
     # Iterate through all my jets
-    if "jets" in myinfo:
-      for jet in myinfo["jets"]:
-        # Jets simply go to the target if there is one, they never get stuck
-        if target is not None:
-          jet.goto(*target)
+    # if "jets" in myinfo:
+    #   for jet in myinfo["jets"]:
+    #     # Jets simply go to the target if there is one, they never get stuck
+    #     if target is not None:
+    #       jet.goto(*target)
