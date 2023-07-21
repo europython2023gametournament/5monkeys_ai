@@ -18,14 +18,14 @@ def heading_away_from_land(game_map: np.ndarray, x: int, y: int) -> np.ndarray:
     if sx == offset and sy == offset:
       continue
     if surrounding[sx, sy] != 1:
-      samples.append(np.arctan2(y - sy, x - sx))
+      samples.append(np.nan_to_num(np.arctan2(y - sy, x - sx)))
 
-  return np.mean(samples) * 180 / np.pi
+  return np.nan_to_num(np.mean(samples)) * 180 / np.pi
 
 
-class BaseState(Enum):
-  INITIALIZE = auto()
-
+class BaseTactic(Enum):
+  TANK = auto()
+  JET  = auto()
 
 # This is the AI bot that will be instantiated for the competition
 class PlayerAi:
@@ -38,7 +38,7 @@ class PlayerAi:
     self.historic_positions = set()
     self.base_ntanks = defaultdict(lambda: 0)
     self.base_nships = defaultdict(lambda: 0)
-    self.base_states = defaultdict(lambda: BaseState.INITIALIZE)
+    self.base_tactic = defaultdict(lambda: BaseTactic.TANK)
 
   def run(self, t: float, dt: float, info: dict, game_map: np.ndarray):
     """
@@ -117,36 +117,41 @@ class PlayerAi:
       base_tanks = base_grouped_tanks[base.uid]
       base_ships = base_grouped_ships[base.uid]
       base_jets = base_grouped_jets[base.uid]
-      base_state = self.base_states[base.uid]
+      base_tactic = self.base_tactic[base.uid]
       heading_away = heading_away_from_land(game_map, base.x, base.y)
       base_ntanks = self.base_ntanks[base.uid]
       base_nships = self.base_nships[base.uid]
+
 
       # First we need to prioritize building our 3 mines, that way we have
       # ample production for all of our conquests.
       if base.mines < 3:
         if base.crystal > base.cost("mine"):
           base.build_mine()
-      elif base.crystal > base.cost("tank") and (len(base_tanks) < 1) or base_ntanks < 8:
+      elif base.crystal > base.cost("tank") and base_ntanks < 6:
         base.build_tank(np.flip(heading_away))
         self.base_ntanks[base.uid] += 1
       # Time to divide like a bacteria! Send out the ships!
-      elif base.crystal > base.cost("ship") and (len(base_ships) < 1) or base_nships < 3:
-        # We need to check that there is not a friendly base in the direct
-        # vicinity (a margin of 10 degrees in this case) of the heading we
-        # initially chose. If there is we want to shift our heading, here
-        # by 20 degrees.
-        for bx, by in base_positions:
-          margin = 10
-          heading_towards_base = math.atan2(base.y - by, base.x - bx)
+      elif base_nships < 4:
+        if base.crystal > base.cost("ship"):
+          # We need to check that there is not a friendly base in the direct
+          # vicinity (a margin of 10 degrees in this case) of the heading we
+          # initially chose. If there is we want to shift our heading, here
+          # by 20 degrees.
+          for bx, by in base_positions:
+            margin = 10
+            heading_towards_base = math.atan2(base.y - by, base.x - bx)
 
-          if heading_towards_base - margin <= heading_away or heading_towards_base + margin >= heading_away:
-            heading_away = (heading_away + 20) % 360
+            if heading_towards_base - margin <= heading_away or heading_towards_base + margin >= heading_away:
+              heading_away = (heading_away + 20) % 360
 
-        base.build_ship(heading_away)
-        self.base_nships[base.uid] += 1
+          base.build_ship(heading_away)
+          self.base_nships[base.uid] += 1
+      elif base.crystal > base.cost("tank") and base_tactic == BaseTactic.TANK:
+        base.build_tank(np.flip(heading_away))
+        self.base_ntanks[base.uid] += 1
       # If everything else is satisfied, build a jet.
-      elif base.crystal > base.cost("jet"):
+      elif base.crystal > base.cost("jet") and base_tactic == BaseTactic.JET:
         base.build_jet(np.flip(heading_away))
 
       for jet in base_jets:
@@ -154,6 +159,68 @@ class PlayerAi:
           jet.goto(enemy_bases[0].x, enemy_bases[0].y)
         # else:
         #   jet.goto(jet.owner.x, jet.owner.y)
+
+      for tank in base_tanks:
+        if (tank.uid in self.previous_positions) and (not tank.stopped):
+          # If the tank position is the same as the previous position,
+          # set a random heading
+          if all(tank.position == self.previous_positions[tank.uid]):
+            tank.set_heading(np.random.random() * 360.0)
+          elif len(enemy_bases) > 0:
+            closest_base_to_tank = min(
+                enemy_bases, key=lambda enemy: tank.get_distance(enemy.x, enemy.y, False))
+            tank.goto(closest_base_to_tank.x, closest_base_to_tank.y)
+          elif len(enemy_tanks) > 0:
+            closest_tank_to_tank = min(
+                enemy_tanks, key=lambda enemy: tank.get_distance(enemy.x, enemy.y, False))
+            tank.goto(closest_tank_to_tank.x, closest_tank_to_tank.y)
+          elif len(enemy_tanks) > 0:
+            closest_tank_to_tank = min(
+                enemy_tanks, key=lambda enemy: tank.get_distance(enemy.x, enemy.y, False))
+            tank.goto(closest_tank_to_tank.x, closest_tank_to_tank.y)
+
+        # Store the previous position of this tank for the next time step
+        self.previous_positions[tank.uid] = tank.position
+
+      for ship in base_ships:
+        if ship.uid in self.previous_positions:
+          # If the ship position is the same as the previous position,
+          # convert the ship to a base if it is far from the owning base,
+          # set a random heading otherwise
+          if all(ship.position == self.previous_positions[ship.uid]):
+            min_base_ship_distance = 20
+            base_ship_distances = [((x, y), ship.get_distance(x, y, False))
+                                   for x, y in base_positions]
+            closest_base = min(
+                base_ship_distances,
+                key=lambda base_ship_distance: base_ship_distance[1])
+            closest_base_position = closest_base[0]
+            closest_base_distance = closest_base[1]
+
+            if closest_base_distance > min_base_ship_distance:
+              # Try to convert the ship into a base
+              base_uid = ship.convert_to_base()
+
+              # We failed and most likely got stuck, lets move a tiny bit
+              if base_uid is None:
+                ship.set_heading((ship.heading - 5) % 360)
+              else:
+                self.base_tactic[base_uid] = BaseTactic.TANK if np.random.random() < 0.8 else BaseTactic.JET
+              # Switch BaseTactic every other base
+              # elif base_tactic == BaseTactic.TANK:
+              #   self.base_tactic[base_uid] = BaseTactic.JET
+              # elif base_tactic == BaseTactic.JET:
+              #   self.base_tactic[base_uid] = BaseTactic.TANK
+
+            else:
+              ship.set_heading(np.random.random() * 360.0)
+              # next_heading = heading_away_from_land(game_map, *closest_base_position)
+              # Lets move in the next best direction
+              # ship.set_heading(heading_away_from_land(game_map, *closest_base_position))
+          else:
+            ship.set_heading((ship.heading + 5) % 360)
+        # Store the previous position of this ship for the next time step
+        self.previous_positions[ship.uid] = ship.position
 
     # Controlling my bases =================================================
 
@@ -269,21 +336,21 @@ class PlayerAi:
     # shortest path on the map (i.e. they may go through the map boundaries).
 
     # Iterate through all my tanks
-    if "tanks" in myinfo:
-      for tank in myinfo["tanks"]:
-        if (tank.uid in self.previous_positions) and (not tank.stopped):
-          # If the tank position is the same as the previous position,
-          # set a random heading
-          if all(tank.position == self.previous_positions[tank.uid]):
-            tank.set_heading(np.random.random() * 360.0)
-          # Else, if there is a target, go to the target
-          elif target is not None:
-            tank.goto(*target)
-        # Store the previous position of this tank for the next time step
-        self.previous_positions[tank.uid] = tank.position
+    # if "tanks" in myinfo:
+    #   for tank in myinfo["tanks"]:
+    #     if (tank.uid in self.previous_positions) and (not tank.stopped):
+    #       # If the tank position is the same as the previous position,
+    #       # set a random heading
+    #       if all(tank.position == self.previous_positions[tank.uid]):
+    #         tank.set_heading(np.random.random() * 360.0)
+    #       # Else, if there is a target, go to the target
+    #       elif target is not None:
+    #         tank.goto(*target)
+    #     # Store the previous position of this tank for the next time step
+    #     self.previous_positions[tank.uid] = tank.position
 
     # Iterate through all my ships
-    if "ships" in myinfo:
+"""     if "ships" in myinfo:
       for ship in myinfo["ships"]:
         if ship.uid in self.previous_positions:
           # If the ship position is the same as the previous position,
@@ -291,7 +358,7 @@ class PlayerAi:
           # set a random heading otherwise
           if all(ship.position == self.previous_positions[ship.uid]):
             min_base_ship_distance = 20
-            base_ship_distances = [((x, y), ship.get_distance(x, y))
+            base_ship_distances = [((x, y), ship.get_distance(x, y, False))
                                    for x, y in base_positions]
             closest_base = min(
                 base_ship_distances,
@@ -313,7 +380,7 @@ class PlayerAi:
               # ship.set_heading(heading_away_from_land(game_map, *closest_base_position))
 
         # Store the previous position of this ship for the next time step
-        self.previous_positions[ship.uid] = ship.position
+        self.previous_positions[ship.uid] = ship.position """
 
     # Iterate through all my jets
     # if "jets" in myinfo:
