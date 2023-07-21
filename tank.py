@@ -132,20 +132,21 @@ class PlayerAi:
         base.build_tank(np.flip(heading_away))
         self.base_ntanks[base.uid] += 1
       # Time to divide like a bacteria! Send out the ships!
-      elif base.crystal > base.cost("ship") and base_nships < 3 or len(base_ships) < 3:
-        # We need to check that there is not a friendly base in the direct
-        # vicinity (a margin of 10 degrees in this case) of the heading we
-        # initially chose. If there is we want to shift our heading, here
-        # by 20 degrees.
-        for bx, by in base_positions:
-          margin = 10
-          heading_towards_base = math.atan2(base.y - by, base.x - bx)
-
-          if heading_towards_base - margin <= heading_away or heading_towards_base + margin >= heading_away:
-            heading_away = (heading_away + 20) % 360
-
-        base.build_ship(heading_away)
-        self.base_nships[base.uid] += 1
+      elif base_nships < 4:
+        if base.crystal > base.cost("ship"):
+          # We need to check that there is not a friendly base in the direct
+          # vicinity (a margin of 10 degrees in this case) of the heading we
+          # initially chose. If there is we want to shift our heading, here
+          # by 20 degrees.
+          for bx, by in base_positions:
+            margin = 10
+            heading_towards_base = math.atan2(base.y - by, base.x - bx)
+  
+            if heading_towards_base - margin <= heading_away or heading_towards_base + margin >= heading_away:
+              heading_away = (heading_away + 20) % 360
+  
+          base.build_ship(heading_away)
+          self.base_nships[base.uid] += 1
       elif base.crystal > base.cost("tank") and base_tactic == BaseTactic.TANK:
         base.build_tank(np.flip(heading_away))
         self.base_ntanks[base.uid] += 1
