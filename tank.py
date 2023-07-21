@@ -6,7 +6,7 @@ import math
 import numpy as np
 
 # This is your team name
-CREATOR = "tank"
+CREATOR = "5monkeys"
 
 
 def heading_away_from_land(game_map: np.ndarray, x: int, y: int) -> np.ndarray:
@@ -141,10 +141,10 @@ class PlayerAi:
           for bx, by in base_positions:
             margin = 10
             heading_towards_base = math.atan2(base.y - by, base.x - bx)
-  
+
             if heading_towards_base - margin <= heading_away or heading_towards_base + margin >= heading_away:
               heading_away = (heading_away + 20) % 360
-  
+
           base.build_ship(heading_away)
           self.base_nships[base.uid] += 1
       elif base.crystal > base.cost("tank") and base_tactic == BaseTactic.TANK:
@@ -188,7 +188,7 @@ class PlayerAi:
           # convert the ship to a base if it is far from the owning base,
           # set a random heading otherwise
           if all(ship.position == self.previous_positions[ship.uid]):
-            min_base_ship_distance = 10
+            min_base_ship_distance = 20
             base_ship_distances = [((x, y), ship.get_distance(x, y, False))
                                    for x, y in base_positions]
             closest_base = min(
@@ -203,7 +203,7 @@ class PlayerAi:
 
               # We failed and most likely got stuck, lets move a tiny bit
               if base_uid is None:
-                ship.set_heading((ship.heading + 10) % 360)
+                ship.set_heading((ship.heading - 5) % 360)
               else:
                 self.base_tactic[base_uid] = BaseTactic.TANK if np.random.random() < 0.8 else BaseTactic.JET
               # Switch BaseTactic every other base
@@ -217,7 +217,8 @@ class PlayerAi:
               # next_heading = heading_away_from_land(game_map, *closest_base_position)
               # Lets move in the next best direction
               # ship.set_heading(heading_away_from_land(game_map, *closest_base_position))
-
+          else:
+            ship.set_heading((ship.heading + 5) % 360)
         # Store the previous position of this ship for the next time step
         self.previous_positions[ship.uid] = ship.position
 
